@@ -1,0 +1,90 @@
+name: Build CMIOT AX18 (LibWrt 25.12-nss)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REPO_URL: https://github.com/LiBwrt/LibWrt
+  REPO_BRANCH: 25.12-nss
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force > /dev/null 2>&1 || true
+          df -hT
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils bzip2 clang flex bison g++ gawk gcc gcc-multilib g++-multilib \
+            gettext git libncurses-dev libssl-dev patch python3 python3-setuptools \
+            rsync unzip zlib1g-dev file wget zstd ccache xsltproc device-tree-compiler jq
+
+      - name: Clone LibWrt source
+        run: |
+          git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" openwrt
+
+      - name: Update & install feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Apply .config
+        run: |
+          cd openwrt
+          cp -f "${GITHUB_WORKSPACE}/.config" .config
+          make defconfig
+
+      - name: Sanity check
+        run: |
+          cd openwrt
+          grep -E 'CONFIG_TARGET_qualcommax|cmiot_ax18|nss|zh_Hans' .config | head -20
+
+      - name: Download sources
+        run: |
+          cd openwrt
+          make download -j$(nproc) || make download -j1 V=s
+
+      - name: Compile firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: List images
+        run: |
+          ls -lh openwrt/bin/targets/*/*/
+
+      - name: Publish release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd openwrt/bin/targets/qualcommax/ipq60xx
+          TAG="ax18-build-$(date +%Y%m%d)-${GITHUB_RUN_NUMBER}"
+          FILES=$(ls *.ubi *.bin *.manifest 2>/dev/null; cat sha256sums 2>/dev/null >/dev/null && echo sha256sums)
+          gh release create "$TAG" $FILES \
+            --title "AX18 LibWrt 25.12-nss" \
+            --notes "CMIOT AX18 firmware. NO WiFi drivers included (intentional per owner)."
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ax18-libwrt-2512-bin
+          path: |
+            openwrt/bin/targets/
+            openwrt/bin/packages/
+          retention-days: 14
