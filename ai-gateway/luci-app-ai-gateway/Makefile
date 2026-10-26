@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ai-gateway
-PKG_VERSION:=0.2.0
+PKG_VERSION:=0.3.0
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
@@ -25,13 +25,11 @@ define Package/$(PKG_NAME)/description
   Pure Go static binary, no runtime dependencies.
 endef
 
-# Go 源码位于本包目录的 src/ 子目录（CI 会把 ai-gateway 根目录的 *.go 和 go.mod 复制进来）
+# Go 源码位于本包目录的 src/ 子目录（单文件 gateway.go）
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) $(CURDIR)/src/go.mod $(PKG_BUILD_DIR)/
-	$(CP) $(CURDIR)/src/main.go $(PKG_BUILD_DIR)/
-	$(CP) $(CURDIR)/src/config.go $(PKG_BUILD_DIR)/
-	$(CP) $(CURDIR)/src/proxy.go $(PKG_BUILD_DIR)/
+	$(CP) $(CURDIR)/src/gateway.go $(PKG_BUILD_DIR)/
 endef
 
 define Build/Compile

@@ -5,19 +5,25 @@
   "providers": [
     {
       "name": "groq",
-      "base_url": "https://api.groq.com/openai/v1",
+      "platform": "groq",
       "api_key": "YOUR_GROQ_API_KEY",
       "models": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
     },
     {
       "name": "google-gemini",
-      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "platform": "google",
       "api_key": "YOUR_GEMINI_API_KEY",
       "models": ["gemini-2.0-flash"]
     },
     {
+      "name": "nvidia-nim",
+      "platform": "nvidia",
+      "api_key": "YOUR_NVIDIA_API_KEY",
+      "models": ["deepseek-v4-pro"]
+    },
+    {
       "name": "openrouter",
-      "base_url": "https://openrouter.ai/api/v1",
+      "platform": "openrouter",
       "api_key": "YOUR_OPENROUTER_API_KEY",
       "models": []
     }
