@@ -1,0 +1,11 @@
+{
+  "luci-app-ai-gateway": {
+    "description": "Access control for AI Gateway settings (UCI)",
+    "read": {
+      "uci": ["ai_gateway"]
+    },
+    "write": {
+      "uci": ["ai_gateway"]
+    }
+  }
+}

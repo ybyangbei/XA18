@@ -8,11 +8,6 @@ on:
 env:
   REPO_URL: https://github.com/LiBwrt/LibWrt
   REPO_BRANCH: 25.12-nss
-  AI_GATEWAY_GO_FILES: |
-    go.mod
-    main.go
-    config.go
-    proxy.go
 
 jobs:
   build:
@@ -51,6 +46,25 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Prepare custom packages & patches
+        run: |
+          cd openwrt
+
+  cp -r "${GITHUB_WORKSPACE}/ai-gateway/luci-app-ai-gateway" package/luci-app-ai-gateway
+
+          # 2) 网口顺序修正：lan1 ↔ lan3 对调（ipq6000-cmiot.dtsi）
+          DTS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+          sed -i 's/label = "lan3"/label = "LAN_TMP"/; s/label = "lan1"/label = "lan3"/; s/label = "LAN_TMP"/label = "lan1"/' "$DTS"
+          echo "--- DTS 校验 ---"
+          grep -n 'label = "' "$DTS"
+
+          # 3) LuCI 回滚窗口缩短：90s → 20s
+          sed -i 's/\toption rollback 90/\toption rollback 20/' feeds/luci/modules/luci-base/root/etc/config/luci
+          sed -i 's/max(timeout, 90)/max(timeout, 15)/' feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
+          echo "--- LuCI rollback 校验 ---"
+          grep -E "rollback|max\(timeout" feeds/luci/modules/luci-base/root/etc/config/luci
+          grep -E "max\(timeout" feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
+
       - name: Apply .config
         run: |
           cd openwrt
@@ -60,7 +74,7 @@ jobs:
       - name: Sanity check
         run: |
           cd openwrt
-          grep -E 'CONFIG_TARGET_qualcommax|cmiot_ax18|nss|zh_Hans' .config | head -20
+          grep -E 'CONFIG_TARGET_qualcommax|cmiot_ax18|nss|zh_Hans|luci-app-ai-gateway|vlmcsd' .config | head -20
 
       - name: Download sources
         run: |
@@ -80,30 +94,6 @@ jobs:
         run: |
           cd openwrt
           grep -E 'CONFIG_PACKAGE_kmod-qca-nss-drv=y|CONFIG_PACKAGE_kmod-qca-nss-dp=y|CONFIG_PACKAGE_kmod-qca-nss-ecm=y|CONFIG_PACKAGE_kmod-nss-ifb=y' .config
-
-      - name: Compile AI Gateway (arm64 CGO_ENABLED=0)
-        run: |
-          mkdir -p ai-gateway-build
-          cd ai-gateway-build
-          for f in ${AI_GATEWAY_GO_FILES}; do
-            if [ -f "${GITHUB_WORKSPACE}/ai-gateway/$f" ]; then
-              cp "$f" .
-            fi
-          done
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ai-gateway .
-
-      - name: Package AI Gateway into OpenWrt feeds
-        run: |
-          cd openwrt
-          mkdir -p package/luci-app-ai-gateway
-          cp -r "${GITHUB_WORKSPACE}/ai-gateway/luci-app-ai-gateway" package/luci-app-ai-gateway
-          # 更新包版本号，与 README 中 ALPKG_VERSION 同步
-          sed -i 's/PKG_VERSION:=0.1.0/PKG_VERSION:=0.2.0/' package/luci-app-ai-gateway/Makefile
-
-      - name: Compile LuCI app (arm64)
-        run: |
-          cd openwrt
-          make package/luci-app-ai-gateway/compile V=s
 
       - name: Publish release
         if: success()

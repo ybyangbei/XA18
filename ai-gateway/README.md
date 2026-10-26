@@ -16,22 +16,28 @@
 
 ## 构建
 
+Go 源码位于 `luci-app-ai-gateway/src/`，所有构建命令需在该子目录中执行：
+
 本地（x86 调试）：
 
 ```sh
+cd luci-app-ai-gateway/src
 go build -o ai-gateway .
+./ai-gateway -config ../../config.example.json
 ```
 
-交叉编译（IPQ60xx = aarch64，本机无 Go 也可在任何装有 Go 的机器 / CI 执行）：
+交叉编译（IPQ60xx = aarch64）：
 
 ```sh
+cd luci-app-ai-gateway/src
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ai-gateway .
 ```
 
 ## 本地运行
 
 ```sh
-./ai-gateway -config config.example.json
+cd luci-app-ai-gateway/src
+./ai-gateway -config ../../config.example.json
 curl http://127.0.0.1:3001/healthz   # => ok
 ```
 
@@ -61,7 +67,7 @@ curl http://127.0.0.1:3001/v1/chat/completions \
 
 ## OpenWrt 打包（LuCI）
 
-`luci-app-ai-gateway/` 为 OpenWrt 包工程：
+`luci-app-ai-gateway/` 为自包含的 OpenWrt 包（Go 源码在 `src/` 子目录）：
 
 ```sh
 # 在 OpenWrt/LibWrt 源码树中
