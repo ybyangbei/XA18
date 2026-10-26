@@ -50,7 +50,8 @@ jobs:
         run: |
           cd openwrt
 
-  cp -r "${GITHUB_WORKSPACE}/ai-gateway/luci-app-ai-gateway" package/luci-app-ai-gateway
+          # 1) 安装 AI Gateway LuCI 包（Go 源码自包含在 src/ 子目录）
+          cp -r "${GITHUB_WORKSPACE}/ai-gateway/luci-app-ai-gateway" package/luci-app-ai-gateway
 
           # 2) 网口顺序修正：lan1 ↔ lan3 对调（ipq6000-cmiot.dtsi）
           DTS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi

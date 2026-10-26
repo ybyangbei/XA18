@@ -1,4 +1,38 @@
-# 下次编译一起改的三件事（2026-10-26 记录）
+# 下次编译一起改的三件事 ✅ 已完成
+
+> 2026-10-26 已全部实现并提交到 commit `34eb9de`，**尚未推送至 GitHub main（不触发 CI）**。
+> 下次 push main 后将自动触发云编译。
+
+---
+
+## 1) 网口顺序 ✅
+
+CI 中已添加 DTS sed patch（`build.yml` → `Prepare custom packages & patches` step），编译时自动执行：
+```bash
+DTS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+sed -i 's/label = "lan3"/label = "LAN_TMP"/; s/label = "lan1"/label = "lan3"/; s/label = "LAN_TMP"/label = "lan1"/' "$DTS"
+```
+刷机后验证：`lan1 ↔ lan3` 对应关系翻转，`brctl showmacs br-lan` 确认。
+
+## 2) freellmapi ✅ → 已替换为自研 Go 轻量网关
+
+freellmapi（Node 458MB）不可行，已改为 **自研 Go 网关**：
+- 纯 Go 标准库，零依赖，交叉编译产物约 8–15 MB
+- Go 源码自包含在 `ai-gateway/luci-app-ai-gateway/src/`
+- `.config` 已添加 `CONFIG_PACKAGE_luci-app-ai-gateway=y`
+- `build.yml` 将 `luci-app-ai-gateway` 复制到 `openwrt/package/`，`make defconfig` 自动发现
+- LuCI 管理界面：`admin/services/ai_gateway`（Lua CBI 配置页 + RPC ACL）
+- init.d 脚本已支持 UCI `enabled` 开关
+
+## 3) 更改配置等待过长 ✅
+
+CI 中已添加 LuCI patch（`build.yml` → `Prepare custom packages & patches` step）：
+- `feeds/luci/modules/luci-base/root/etc/config/luci`：`option rollback 90` → `20`
+- `feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc`：`max(timeout, 90)` → `max(timeout, 15)`
+
+---
+
+## 其他同步完成的变更
 
 设备现状：LibWrt 25.12-SNAPSHOT r0-3a3d0b0 / kernel 6.12.108 / CMIOT AX18
 登录：`root@192.168.2.1`，密码 `OOoo0000`（LuCI 只有 HTTP 192.168.2.1:80）
@@ -100,13 +134,4 @@ ip link set lan3 name lan1; ip link set lan_tmp name lan3
 
 临时规避（不重刷）：网络类改动点 **"应用（不检查）"**（Apply unchecked），完全不进回滚等待。
 
----
 
-## 备注（不要误改）
-
-- 本固件 **故意不含 WiFi**（用户要求）：`.config` 里 `kmod-ath11k*`、`ath11k-firmware-*`、
-  `ipq-wifi-cmiot_ax18`、`wpad-*` 全是 not set。后续重编不要开回来。
-- `luci.apply.*` 的其它值（holdoff/timeout/display）保持原样，只改 rollback。
-- 现场验证过的运行状态（供对比基线）：RAM 929 MB、overlay 52.4 M/剩 49 M、overlay 已用 688 K、
-  WAN PPPoE 100.70.79.26 (CGNAT)、IPv6 /60 PD 正常、NSS/ECM 卸载生效（success 11829 / fail 0）、
-  CPU 温度 40–41.5 ℃、测速约 313 Mbps。
