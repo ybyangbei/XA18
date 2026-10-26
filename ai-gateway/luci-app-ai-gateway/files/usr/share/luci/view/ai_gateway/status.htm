@@ -1,0 +1,141 @@
+<%-
+	local fs = require "nixio.fs"
+	local util = require "luci.util"
+	local json = require "luci.jsonc"
+	
+	-- 读取服务状态
+	local status = {}
+	local config_file = "/etc/ai-gateway/config.json"
+	
+	if fs.access(config_file) then
+		local f = io.open(config_file, "r")
+		if f then
+			local content = f:read("*all")
+			f:close()
+			local config = json.parse(content)
+			if config then
+				status.config = config
+			end
+		end
+	end
+	
+	-- 检查进程状态
+	local pid = util.exec("pgrep -f ai-gateway")
+	status.running = (pid ~= "")
+	
+	-- 读取日志文件
+	local log_content = ""
+	local log_file = status.config and status.config.log_file or "/tmp/ai-gateway.log"
+	if fs.access(log_file) then
+		local f = io.open(log_file, "r")
+		if f then
+			log_content = f:read("*all")
+			f:close()
+			-- 只显示最后1000个字符
+			if #log_content > 1000 then
+				log_content = "..." .. string.sub(log_content, -1000)
+			end
+		end
+	end
+-%>
+
+<h2><%:AI Gateway 服务状态%></h2>
+
+<div class="cbi-map">
+	<h3><%:基本信息%></h3>
+	<div class="cbi-section">
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:服务状态%></label>
+			<div class="cbi-value-field">
+				<% if status.running then %>
+					<span class="cbi-value-field" style="color: green;"><%:运行中%></span>
+				<% else %>
+					<span class="cbi-value-field" style="color: red;"><%:已停止%></span>
+				<% end %>
+			</div>
+		</div>
+		
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:监听端口%></label>
+			<div class="cbi-value-field">
+				<%= (status.config and status.config.listen) or "未配置" %>
+			</div>
+		</div>
+		
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:进程ID%></label>
+			<div class="cbi-value-field">
+				<%= pid or "无" %>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="cbi-map">
+	<h3><%:配置信息%></h3>
+	<div class="cbi-section">
+		<% if status.config then %>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:Provider 数量%></label>
+				<div class="cbi-value-field">
+					<%= #status.config.providers %>
+				</div>
+			</div>
+			
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:API Key%></label>
+				<div class="cbi-value-field">
+					<% if status.config.gateway_key and status.config.gateway_key ~= "change-me-to-a-strong-key" then %>
+						已设置
+					<% else %>
+						<span style="color: red;">未设置或使用默认值</span>
+					<% end %>
+				</div>
+			</div>
+			
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:配置文件%></label>
+				<div class="cbi-value-field">
+					<%= config_file %>
+				</div>
+			</div>
+		<% else %>
+			<p><%:无法读取配置文件%></p>
+		<% end %>
+	</div>
+</div>
+
+<div class="cbi-map">
+	<h3><%:操作%></h3>
+	<div class="cbi-section">
+		<div class="cbi-value">
+			<label class="cbi-value-title">&nbsp;</label>
+			<div class="cbi-value-field">
+				<% if status.running then %>
+					<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "ai_gateway", "stop")%>">
+						<input type="hidden" name="token" value="<%=token%>">
+						<input class="cbi-button cbi-button-remove" type="submit" value="<%:停止服务%>">
+					</form>
+				<% else %>
+					<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "ai_gateway", "start")%>">
+						<input type="hidden" name="token" value="<%=token%>">
+						<input class="cbi-button cbi-button-add" type="submit" value="<%:启动服务%>">
+					</form>
+				<% end %>
+			</div>
+		</div>
+	</div>
+</div>
+
+<% if log_content ~= "" then %>
+<div class="cbi-map">
+	<h3><%:服务日志（最后1000字符）%></h3>
+	<div class="cbi-section">
+		<div class="cbi-value">
+			<div class="cbi-value-field" style="font-family: monospace; font-size: 12px; background: #f5f5f5; padding: 10px; border-radius: 3px; white-space: pre-wrap; word-break: break-all;">
+				<%= log_content:gsub("\n", "<br>") %>
+			</div>
+		</div>
+	</div>
+</div>
+<% end %>

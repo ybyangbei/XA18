@@ -1,0 +1,122 @@
+<%-
+	local util = require "luci.util"
+	local json = require "luci.jsonc"
+	local http = require "luci.http"
+	
+	-- 获取健康检查数据
+	local health_data = {}
+	local base_url = "http://localhost:3001"
+	
+	-- 获取 /health 端点
+	local health_response = util.exec("curl -s " .. base_url .. "/health")
+	if health_response ~= "" then
+		local success, data = pcall(json.parse, health_response)
+		if success then
+			health_data.health = data
+		end
+	end
+	
+	-- 获取 /v1/models 端点
+	local models_response = util.exec("curl -s " .. base_url .. "/v1/models")
+	if models_response ~= "" then
+		local success, data = pcall(json.parse, models_response)
+		if success then
+			health_data.models = data
+		end
+	end
+	
+	-- 检查服务可用性
+	local service_available = (health_response ~= "")
+-%>
+
+<h2><%:AI Gateway 健康检查%></h2>
+
+<div class="cbi-map">
+	<h3><%:服务可用性%></h3>
+	<div class="cbi-section">
+		<% if service_available then %>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:状态%></label>
+				<div class="cbi-value-field" style="color: green;"><%:正常%></div>
+			</div>
+		<% else %>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:状态%></label>
+				<div class="cbi-value-field" style="color: red;"><%:服务不可用%></div>
+			</div>
+			<p><%:无法连接到 AI Gateway 服务，请检查服务是否运行%></p>
+		<% end %>
+	</div>
+</div>
+
+<% if health_data.health then %>
+<div class="cbi-map">
+	<h3><%:健康检查详情%></h3>
+	<div class="cbi-section">
+		<% for key, value in pairs(health_data.health) do %>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%= key %></label>
+				<div class="cbi-value-field">
+					<% if type(value) == "table" then %>
+						<%= json.stringify(value) %>
+					<% else %>
+						<%= value %>
+					<% end %>
+				</div>
+			</div>
+		<% end %>
+	</div>
+</div>
+<% end %>
+
+<% if health_data.models and health_data.models.data then %>
+<div class="cbi-map">
+	<% if health_data.models.data and #health_data.models.data > 0 then %>
+		<h3><%:可用模型 (<%= #health_data.models.data %>)%></h3>
+		<div class="cbi-section">
+			<table class="table" id="ai-gateway-models">
+				<tr>
+					<th><%:ID%></th>
+					<th><%:对象%></th>
+					<th><%:所有者%></th>
+					<th><%:权限%></th>
+				</tr>
+				<% for i, model in ipairs(health_data.models.data) do %>
+					<tr>
+						<td><%= model.id or "N/A" %></td>
+						<td><%= model.object or "N/A" %></td>
+						<td><%= model.owned_by or "N/A" %></td>
+						<td><%= model.permissions and json.stringify(model.permissions) or "N/A" %></td>
+					</tr>
+				<% end %>
+			</table>
+		</div>
+	<% else %>
+		<p><%:没有可用的模型%></p>
+	<% end %>
+</div>
+<% end %>
+
+<div class="cbi-map">
+	<h3><%:测试连接%></h3>
+	<div class="cbi-section">
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:快速测试%></label>
+			<div class="cbi-value-field">
+				<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "ai_gateway", "test")%>">
+					<input type="hidden" name="token" value="<%=token%>">
+					<input class="cbi-button cbi-button-action" type="submit" value="<%:测试连接%>">
+				</form>
+			</div>
+		</div>
+	</div>
+</div>
+
+<% if service_available then %>
+<script type="text/javascript">
+	// 自动刷新健康检查页面
+	setTimeout(function() {
+		window.location.reload();
+	}, 30000); // 30秒刷新一次
+</script>
+<% end %>
