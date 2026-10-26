@@ -8,6 +8,11 @@ on:
 env:
   REPO_URL: https://github.com/LiBwrt/LibWrt
   REPO_BRANCH: 25.12-nss
+  AI_GATEWAY_GO_FILES: |
+    go.mod
+    main.go
+    config.go
+    proxy.go
 
 jobs:
   build:
@@ -33,7 +38,8 @@ jobs:
           sudo apt-get install -y \
             binutils bzip2 clang flex bison g++ gawk gcc gcc-multilib g++-multilib \
             gettext git libncurses-dev libssl-dev patch python3 python3-setuptools \
-            pkg-config swig rsync unzip zlib1g-dev file wget zstd ccache xsltproc device-tree-compiler jq
+            pkg-config swig rsync unzip zlib1g-dev file wget zstd ccache xsltproc device-tree-compiler jq \
+            golang-go
 
       - name: Clone LibWrt source
         run: |
@@ -68,7 +74,36 @@ jobs:
 
       - name: List images
         run: |
-          ls -lh openwrt/bin/targets/*/*/
+          ls -lh openwrt/bin/targets/qualcommax/ipq60xx/
+
+      - name: Sanity check NSS + ECM
+        run: |
+          cd openwrt
+          grep -E 'CONFIG_PACKAGE_kmod-qca-nss-drv=y|CONFIG_PACKAGE_kmod-qca-nss-dp=y|CONFIG_PACKAGE_kmod-qca-nss-ecm=y|CONFIG_PACKAGE_kmod-nss-ifb=y' .config
+
+      - name: Compile AI Gateway (arm64 CGO_ENABLED=0)
+        run: |
+          mkdir -p ai-gateway-build
+          cd ai-gateway-build
+          for f in ${AI_GATEWAY_GO_FILES}; do
+            if [ -f "${GITHUB_WORKSPACE}/ai-gateway/$f" ]; then
+              cp "$f" .
+            fi
+          done
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ai-gateway .
+
+      - name: Package AI Gateway into OpenWrt feeds
+        run: |
+          cd openwrt
+          mkdir -p package/luci-app-ai-gateway
+          cp -r "${GITHUB_WORKSPACE}/ai-gateway/luci-app-ai-gateway" package/luci-app-ai-gateway
+          # 更新包版本号，与 README 中 ALPKG_VERSION 同步
+          sed -i 's/PKG_VERSION:=0.1.0/PKG_VERSION:=0.2.0/' package/luci-app-ai-gateway/Makefile
+
+      - name: Compile LuCI app (arm64)
+        run: |
+          cd openwrt
+          make package/luci-app-ai-gateway/compile V=s
 
       - name: Publish release
         if: success()
@@ -77,10 +112,10 @@ jobs:
         run: |
           cd openwrt/bin/targets/qualcommax/ipq60xx
           TAG="ax18-build-$(date +%Y%m%d)-${GITHUB_RUN_NUMBER}"
-          FILES=$(ls *.ubi *.bin *.manifest 2>/dev/null; cat sha256sums 2>/dev/null >/dev/null && echo sha256sums)
+          FILES=$(ls *.ubi *.bin *.manifest 2>/dev/null || true; cat sha256sums 2>/dev/null || true)
           gh release create "$TAG" $FILES --repo "${GITHUB_REPOSITORY}" \
             --title "AX18 LibWrt 25.12-nss" \
-            --notes "CMIOT AX18 firmware. NO WiFi drivers included (intentional per owner)."
+            --notes "CMIOT AX18 firmware. NO WiFi drivers included (intentional per owner). NSS ECM enabled (D-01). AI Gateway (Go, arm64) + LuCI app included."
           echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Upload artifacts

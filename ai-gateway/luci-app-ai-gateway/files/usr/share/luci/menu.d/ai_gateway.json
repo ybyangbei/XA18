@@ -1,0 +1,7 @@
+{
+  "admin/services/ai_gateway": {
+    "title": "AI Gateway",
+    "order": 80,
+    "depends": { "acl": [ "luci-app-ai-gateway" ] }
+  }
+}
