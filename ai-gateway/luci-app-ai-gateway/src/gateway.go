@@ -1208,7 +1208,12 @@ func (gw *Gateway) handleChatCompletion(w http.ResponseWriter, r *http.Request) 
 		impl := getProviderImpl(prov)
 
 		if req.Stream {
-			gw.handleStreamResponse(w, r, prov, impl, body, &req, start)
+			if err := gw.handleStreamResponse(w, r, prov, impl, body, &req, start); err != nil {
+				lastErr = err
+				gw.logRequest(req.Model, prov.Name, false, err.Error(), start)
+				log.Printf("[ai-gateway] provider %s stream failed: %v", prov.Name, err)
+				continue
+			}
 			return
 		}
 
@@ -1254,12 +1259,10 @@ func (gw *Gateway) providersForModel(model string) []*Provider {
 	return candidates
 }
 
-func (gw *Gateway) handleStreamResponse(w http.ResponseWriter, r *http.Request, p *Provider, impl ProviderImpl, body []byte, req *ChatCompletionRequest, start time.Time) {
+func (gw *Gateway) handleStreamResponse(w http.ResponseWriter, r *http.Request, p *Provider, impl ProviderImpl, body []byte, req *ChatCompletionRequest, start time.Time) error {
 	ch, err := impl.StreamChatCompletion(p, body, req)
 	if err != nil {
-		gw.logRequest(req.Model, p.Name, false, err.Error(), start)
-		writeJSON(w, http.StatusBadGateway, APIError{Message: err.Error(), Type: "upstream_error"})
-		return
+		return err
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -1268,7 +1271,7 @@ func (gw *Gateway) handleStreamResponse(w http.ResponseWriter, r *http.Request, 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
-		return
+		return nil
 	}
 	w.WriteHeader(http.StatusOK)
 
@@ -1278,7 +1281,7 @@ func (gw *Gateway) handleStreamResponse(w http.ResponseWriter, r *http.Request, 
 			if first {
 				log.Printf("[ai-gateway] stream error from %s: %v", p.Name, chunk.Err)
 			}
-			return
+			return nil
 		}
 		if chunk.Data != "" {
 			fmt.Fprintf(w, "data: %s\n\n", chunk.Data)
@@ -1293,6 +1296,7 @@ func (gw *Gateway) handleStreamResponse(w http.ResponseWriter, r *http.Request, 
 	}
 	fmt.Fprintf(w, "data: [DONE]\n\n")
 	flusher.Flush()
+	return nil
 }
 
 func (gw *Gateway) handleModels(w http.ResponseWriter, r *http.Request) {

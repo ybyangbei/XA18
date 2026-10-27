@@ -156,4 +156,10 @@ awk '{gsub(/request\.get\(url,\{cache:true\}\)/,"Promise.race([request.get(url,{
 
 设备实测：`vlmcsd.config.enabled=1` → 1688 监听（IPv4+IPv6）；`smartdns.@smartdns[0].enabled=1` → smartdns 接管 53、dnsmasq 保留 DHCP/本地域、LAN DNS 解析正常。build.yml Step 6 对包源码默认配置 sed `option enabled '0'→'1'`。
 
+## 6) AI 网关：智谱 provider 已接入并端到端验证 ✅ / 前端 addremove 兼容问题 ⚠️
+
+- 设备实测（2026-10-28）：双 provider（OpenRouter + 智谱AI）聚合成功，**fallback 机制验证通过**（`glm-4-flash` → OpenRouter 400 → 自动切智谱AI → ok:true，返回正确内容）。
+- 智谱免费模型 `glm-4-flash` 可用（国内直连，无需翻墙，不受 OpenRouter 免费额度限制）。
+- **⚠️ 前端 bug**：LuCI 25.12 前端下，老式 CBI（ai_gateway.lua）的"添加 provider"（addremove）**保存不生效**（新增 section 未写入 uci，页面显示正常但保存后丢失）。绕开方式：SSH `uci add ai-gateway provider` + 写 config.json。后续可选：把 ai_gateway.lua 迁移到新 CBI 或修 addremove 兼容。
+
 

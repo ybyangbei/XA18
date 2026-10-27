@@ -3,3 +3,4 @@
 /ai-gateway
 /ai-gateway.exe
 /luci-app-ai-gateway/src/ai-gateway
+/luci-app-ai-gateway/src/ai-gateway-arm64
