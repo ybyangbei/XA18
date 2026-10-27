@@ -1346,58 +1346,21 @@ func (gw *Gateway) handleModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ModelListResponse{Object: "list", Data: allModels})
 }
 
+// handleHealth returns a lightweight, deadlock-free local status.
+// External ValidateKey probes are intentionally NOT called here to avoid
+// holding gw.mu while an unbounded upstream HTTP request may stall.
 func (gw *Gateway) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeJSON(w, http.StatusMethodNotAllowed, APIError{Message: "method not allowed"})
 		return
 	}
-
-	gw.mu.RLock()
-	defer gw.mu.RUnlock()
-
-	var wg sync.WaitGroup
-	for i := range gw.cfg.Providers {
-		p := &gw.cfg.Providers[i]
-		wg.Add(1)
-		go func(prov *Provider) {
-			defer wg.Done()
-			impl := getProviderImpl(prov)
-			ok, err := impl.ValidateKey(prov)
-			gw.mu.Lock()
-			h, exists := gw.health[prov.Name]
-			if !exists {
-				h = &ProviderHealth{Name: prov.Name, Platform: prov.Platform}
-				gw.health[prov.Name] = h
-			}
-			if ok {
-				h.Status = "healthy"
-			} else if err != nil {
-				h.Status = "error"
-				h.Error = err.Error()
-			} else {
-				h.Status = "error"
-				h.Error = "key rejected"
-			}
-			h.LastCheck = time.Now().Format(time.RFC3339)
-			gw.mu.Unlock()
-		}(p)
-	}
-	wg.Wait()
-
-	var providers []ProviderHealth
-	for _, h := range gw.health {
-		providers = append(providers, *h)
-	}
-
-	totalModels := 0
-	for i := range gw.cfg.Providers {
-		if len(gw.cfg.Providers[i].Models) > 0 {
-			totalModels += len(gw.cfg.Providers[i].Models)
-		}
-	}
-
-	status := "ok"
-	for _, h := range providers {
+	writeJSON(w, http.StatusOK, HealthResponse{
+		Status:    "ok",
+		Uptime:    time.Since(startTime).String(),
+		Version:   buildVersion,
+		Providers: gw.cfg.Providers,
+	})
+}
 		if h.Status == "error" {
 			status = "degraded"
 		}
