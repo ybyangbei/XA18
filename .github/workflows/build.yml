@@ -84,6 +84,14 @@ jobs:
           grep -c "apply_unchecked':'apply_unchecked" "$UIJS"
           grep -c 'apply_on_parse = true' "$CBI"
 
+          # 5) nlbwmon 显示页：oui.json（raw.githubusercontent.com）外部请求 3s 超时
+          #    设备实测：GitHub 被墙时该请求挂起 → Promise.all 永不 resolve → 整页卡"加载视图中…"
+          NLBWDISP=$(find feeds/luci/applications/luci-app-nlbwmon -name display.js -path '*view/nlbw*' | head -1)
+          echo "NLBWDISP=$NLBWDISP"
+          awk '{gsub(/request\.get\(url,\{cache:true\}\)/,"Promise.race([request.get(url,{cache:true}),new Promise(function(rs){setTimeout(function(){rs(null)},3000)})])");print}' "$NLBWDISP" > /tmp/nlbw_display.js && mv /tmp/nlbw_display.js "$NLBWDISP"
+          echo "--- nlbw display.js verify ---"
+          grep -c 'Promise.race' "$NLBWDISP"
+
       - name: Apply .config
         run: |
           cd openwrt
