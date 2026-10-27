@@ -59,9 +59,9 @@ jobs:
           echo "--- DTS 校验 ---"
           grep -n 'label = "' "$DTS"
 
-          # 3) LuCI 回滚窗口缩短：90s → 20s
-          sed -i 's/\toption rollback 90/\toption rollback 20/' feeds/luci/modules/luci-base/root/etc/config/luci
-          sed -i 's/max(timeout, 90)/max(timeout, 15)/' feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
+          # 3) LuCI 禁用配置校验（rollback=0 即不等待确认直接生效）
+          sed -i 's/\toption rollback 90/\toption rollback 0/' feeds/luci/modules/luci-base/root/etc/config/luci
+          sed -i 's/max(timeout, 90)/max(timeout, 5)/' feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
           echo "--- LuCI rollback 校验 ---"
           grep -E "rollback|max\(timeout" feeds/luci/modules/luci-base/root/etc/config/luci
           grep -E "max\(timeout" feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
