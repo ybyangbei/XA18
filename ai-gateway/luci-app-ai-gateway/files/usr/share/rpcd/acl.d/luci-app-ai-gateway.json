@@ -2,10 +2,16 @@
   "luci-app-ai-gateway": {
     "description": "Access control for AI Gateway settings (UCI)",
     "read": {
-      "uci": ["ai_gateway"]
+      "uci": ["ai-gateway", "ai_gateway"],
+      "file": {
+        "/etc/ai-gateway/*": ["read"]
+      }
     },
     "write": {
-      "uci": ["ai_gateway"]
+      "uci": ["ai-gateway", "ai_gateway"],
+      "file": {
+        "/etc/ai-gateway/*": ["write"]
+      }
     }
   }
 }

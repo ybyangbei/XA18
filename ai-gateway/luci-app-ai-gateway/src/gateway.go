@@ -1354,23 +1354,20 @@ func (gw *Gateway) handleHealth(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, APIError{Message: "method not allowed"})
 		return
 	}
+	providers := make([]ProviderHealth, 0, len(gw.cfg.Providers))
+	for _, p := range gw.cfg.Providers {
+		ph := ProviderHealth{Name: p.Name, Platform: p.Platform}
+		if h, ok := gw.health[p.Name]; ok {
+			ph.Status = h.Status
+			ph.LastCheck = h.LastCheck
+			ph.Error = h.Error
+		}
+		providers = append(providers, ph)
+	}
 	writeJSON(w, http.StatusOK, HealthResponse{
 		Status:    "ok",
 		Uptime:    time.Since(startTime).String(),
 		Version:   buildVersion,
-		Providers: gw.cfg.Providers,
-	})
-}
-		if h.Status == "error" {
-			status = "degraded"
-		}
-	}
-
-	writeJSON(w, http.StatusOK, HealthResponse{
-		Status:    status,
-		Uptime:    time.Since(startTime).String(),
-		Version:   buildVersion,
-		Models:    totalModels,
 		Providers: providers,
 	})
 }

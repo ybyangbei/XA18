@@ -45,6 +45,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/controller
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/model/cbi
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/view/ai_gateway
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/ai-gateway $(1)/usr/bin/
 	$(INSTALL_BIN) ./files/etc/init.d/ai-gateway $(1)/etc/init.d/
 	$(INSTALL_DATA) ./files/etc/ai-gateway/config.json $(1)/etc/ai-gateway/
@@ -53,6 +54,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DATA) ./files/usr/share/luci/menu.d/*.json $(1)/usr/share/luci/menu.d/
 	$(INSTALL_DATA) ./files/usr/lib/lua/luci/controller/*.lua $(1)/usr/lib/lua/luci/controller/
 	$(INSTALL_DATA) ./files/usr/lib/lua/luci/model/cbi/*.lua $(1)/usr/lib/lua/luci/model/cbi/
+	$(INSTALL_DATA) ./files/usr/lib/lua/luci/view/ai_gateway/*.htm $(1)/usr/lib/lua/luci/view/ai_gateway/
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

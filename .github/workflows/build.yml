@@ -66,6 +66,24 @@ jobs:
           grep -E "rollback|max\(timeout" feeds/luci/modules/luci-base/root/etc/config/luci
           grep -E "max\(timeout" feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
 
+          # 4) LuCI 前端/框架补丁（设备实测：仅改配置 rollback=0 前端 JS 不识别，仍走 90s 回滚）
+          #    4a. ui.js initTabGroup：tab 全空时 selected 兜底为 0，修复页面初始化崩溃
+          #        （崩溃会中断 init 链，导致"保存并应用"按钮事件未绑定、部分页面卡"加载视图中…"）
+          #    4b. ui.js apply：保存并应用恒走 apply_unchecked（立即 commit+apply，无 90s 回滚确认）
+          #    4c. cbi.lua Map 默认 apply_on_parse=true：老式 lua CBI（含自研 ai-gateway）保存即后端立即 commit+apply
+          UIJS=$(find feeds/luci/modules/luci-base -name ui.js -path '*luci-static/resources*' | head -1)
+          CBI=$(find feeds/luci/modules/luci-base -path '*model/cbi.lua' | head -1)
+          echo "--- patch targets ---"
+          echo "UIJS=$UIJS"
+          echo "CBI=$CBI"
+          sed -i 's/selected=i;break;}}}/selected=i;break;}}}if(selected===null)selected=0;/' "$UIJS"
+          sed -i "s/apply_rollback':'apply_unchecked/apply_unchecked':'apply_unchecked/" "$UIJS"
+          sed -i 's/self.apply_on_parse = nil/self.apply_on_parse = true/' "$CBI"
+          echo "--- patch verify ---"
+          grep -c 'if(selected===null)selected=0' "$UIJS"
+          grep -c "apply_unchecked':'apply_unchecked" "$UIJS"
+          grep -c 'apply_on_parse = true' "$CBI"
+
       - name: Apply .config
         run: |
           cd openwrt

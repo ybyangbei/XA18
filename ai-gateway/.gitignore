@@ -2,3 +2,4 @@
 # files/etc/init.d/ai-gateway 等同名文件
 /ai-gateway
 /ai-gateway.exe
+/luci-app-ai-gateway/src/ai-gateway

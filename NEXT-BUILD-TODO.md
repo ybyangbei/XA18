@@ -119,19 +119,28 @@ ip link set lan3 name lan1; ip link set lan_tmp name lan3
 触发条件（会转圈数到 90 s 然后提示"配置已回滚"）：
 - 改网络类设置后浏览器短暂连不上路由器；页面会话过期（实测旧会话 apply 直接 403）；手机切后台轮询中断。
 
-修改点（两处必须一致）：
+**已验证的根因（2026-10-27 设备实测）**：
+- **仅改 `/etc/config/luci` 的 `rollback 90→0` 无效**：LibWrt 25.12 的 LuCI 是上游 openwrt-25.12 前端，`config internal apply` 是 ImmortalWrt 语法，前端 JS **不识别**，"保存并应用"仍走 `apply_rollback`（90 s 回滚）。
+- **前端 `ui.js` 的 `initTabGroup` 崩溃**（tab 全空时 `selected` 为 null → `menu.childNodes[selected].classList` 报 TypeError）：中断页面初始化链，导致 **"保存并应用"按钮事件未绑定**（点了没反应）、部分页面卡"加载视图中…"。
+- **老式 lua CBI**（含自研 ai-gateway）默认 `apply_on_parse=nil`：保存并应用走前端 XHR apply（依赖 JS + 90 s 回滚）；`apply_on_parse=true` 时后端 `uci:apply(true)` 立即 commit+apply。
 
-1. `feeds/luci/modules/luci-base/root/etc/config/luci`
-   `option rollback 90` → `option rollback 20`
+**生效的修复（三处源码补丁，已设备实测通过，build.yml Step 4 已带上）**：
+1. `feeds/luci/modules/luci-base/htdocs/.../resources/ui.js`（initTabGroup 兜底）：
    ```bash
-   sed -i 's/^\(\s*option rollback\s*\)90$/\120/' feeds/luci/modules/luci-base/root/etc/config/luci
+   sed -i 's/selected=i;break;}}}/selected=i;break;}}}if(selected===null)selected=0;/' "$UIJS"
    ```
-2. `feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc`（约第 52 行）
-   `timeout: max(timeout, 90)` → `timeout: max(timeout, 10)`
+2. `feeds/luci/modules/luci-base/htdocs/.../resources/ui.js`（保存并应用恒走 apply_unchecked，立即生效无 90 s 回滚）：
    ```bash
-   sed -i 's/max(timeout, 90)/max(timeout, 10)/' feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
+   sed -i "s/apply_rollback':'apply_unchecked/apply_unchecked':'apply_unchecked/" "$UIJS"
    ```
+3. `feeds/luci/modules/luci-base/luasrc/model/cbi.lua`（Map 默认 apply_on_parse=true，老 CBI 保存即后端立即 commit+apply）：
+   ```bash
+   sed -i 's/self.apply_on_parse = nil/self.apply_on_parse = true/' "$CBI"
+   ```
+   （编译期路径用 `find feeds/luci/modules/luci-base -name ui.js -path '*luci-static/resources*'` / `-path '*model/cbi.lua'` 定位，见 build.yml）
 
-临时规避（不重刷）：网络类改动点 **"应用（不检查）"**（Apply unchecked），完全不进回滚等待。
+**实测结果**：系统页改主机名 → 保存并应用 → **uci 立即落盘、无 pending、无回滚、无 90 s 等待**；initTabGroup 崩溃消失（console 无错误）。
+
+**取舍说明**：全局 apply_unchecked 后，改网络类配置失败时**不再自动回滚**（符合"立即生效、应用（不检查）"的需求方明确倾向）；如需保留回滚保护，仅对特定页面改回 `apply_rollback`。
 
 

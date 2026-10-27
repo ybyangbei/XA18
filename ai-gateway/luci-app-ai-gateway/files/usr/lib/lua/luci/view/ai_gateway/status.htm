@@ -1,0 +1,63 @@
+<%+header%>
+
+<h2 name="content"><%:AI Gateway 服务状态%></h2>
+
+<div class="cbi-section">
+	<h3><%:运行状态%></h3>
+	<div class="cbi-section-node">
+		<table class="cbi-section-table">
+			<tr class="cbi-section-table-titles">
+				<th><%:项目%></th>
+				<th><%:当前值%></th>
+			</tr>
+			<%
+			local pid = ""
+			local p = io.popen("pgrep -f '/usr/bin/ai-gateway' | head -1")
+			if p then pid = (p:read("*l") or ""); p:close() end
+
+			local listening = ""
+			p = io.popen("netstat -ltn 2>/dev/null | grep ':3001' | head -1")
+			if p then listening = (p:read("*l") or ""); p:close() end
+
+			local health = ""
+			p = io.popen("wget -q -O- http://127.0.0.1:3001/health 2>/dev/null | head -c 200")
+			if p then health = (p:read("*l") or ""); p:close() end
+			%>
+			<tr class="cbi-section-table-row">
+				<td><%:进程%></td>
+				<td><%= pid ~= "" and ("运行中 (PID " .. pid .. ")") or "未运行" %></td>
+			</tr>
+			<tr class="cbi-section-table-row">
+				<td><%:监听端口%></td>
+				<td><%= listening ~= "" and "3001 监听中" or "未监听" %></td>
+			</tr>
+			<tr class="cbi-section-table-row">
+				<td><%:健康端点%></td>
+				<td><%= health ~= "" and "响应正常" or "无响应" %></td>
+			</tr>
+		</table>
+	</div>
+</div>
+
+<div class="cbi-section">
+	<h3><%:日志（最近 60 行）%></h3>
+	<div class="cbi-section-node">
+		<pre style="white-space:pre-wrap; overflow:auto; max-height:24em"><%
+			local f = io.open("/tmp/ai-gateway.log", "r")
+			if f then
+				local lines = {}
+				for l in f:lines() do table.insert(lines, l) end
+				f:close()
+				local s = #lines - 60
+				if s < 1 then s = 1 end
+				for i = s, #lines do
+		%><%= lines[i] %><%
+				end
+			else
+		%><%:暂无日志%><%
+			end
+	%></pre>
+	</div>
+</div>
+
+<%+footer%>

@@ -1,0 +1,49 @@
+<%+header%>
+
+<h2 name="content"><%:AI Gateway 健康检查%></h2>
+
+<div class="cbi-section">
+	<h3><%:健康端点 (/health)%></h3>
+	<div class="cbi-section-node">
+		<%
+		local json = require "luci.jsonc"
+		local p = io.popen("wget -q -O- http://127.0.0.1:3001/health 2>/dev/null")
+		local raw = ""
+		if p then raw = (p:read("*a") or ""); p:close() end
+		local data = nil
+		if raw and raw ~= "" then
+			local ok, parsed = pcall(json.parse, raw)
+			if ok and type(parsed) == "table" then data = parsed end
+		end
+		%>
+		<% if data then %>
+		<table class="cbi-section-table">
+			<tr class="cbi-section-table-titles">
+				<th><%:项目%></th><th><%:值%></th>
+			</tr>
+			<tr class="cbi-section-table-row"><td><%:状态%></td><td><%= data.status %></td></tr>
+			<tr class="cbi-section-table-row"><td><%:版本%></td><td><%= data.version %></td></tr>
+			<tr class="cbi-section-table-row"><td><%:运行时长%></td><td><%= data.uptime %></td></tr>
+			<tr class="cbi-section-table-row"><td><%:Provider 数量%></td><td><%= #(data.providers or {}) %></td></tr>
+		</table>
+
+		<h3><%:Provider 列表%></h3>
+		<table class="cbi-section-table">
+			<tr class="cbi-section-table-titles">
+				<th><%:名称%></th><th><%:平台%></th><th><%:模型数%></th>
+			</tr>
+			<% for _, pr in ipairs(data.providers or {}) do %>
+			<tr class="cbi-section-table-row">
+				<td><%= pr.name %></td>
+				<td><%= pr.platform %></td>
+				<td><%= #(pr.models or {}) %></td>
+			</tr>
+			<% end %>
+		</table>
+		<% else %>
+		<p><%:网关无响应（服务未运行或 3001 端口不通）。%></p>
+		<% end %>
+	</div>
+</div>
+
+<%+footer%>
