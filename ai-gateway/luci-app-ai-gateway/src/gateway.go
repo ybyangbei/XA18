@@ -1246,17 +1246,34 @@ func (gw *Gateway) providersForModel(model string) []*Provider {
 			candidates = append(candidates, p)
 		} else {
 			for _, m := range p.Models {
-				if m == model {
+				if modelMatches(m, model) {
 					candidates = append(candidates, p)
 					break
 				}
 			}
 		}
 	}
-	if len(candidates) == 0 && len(gw.cfg.Providers) > 0 {
-		candidates = append(candidates, &gw.cfg.Providers[0])
-	}
+	// 白名单严格模式（防扣费）：模型不匹配任何 provider 白名单时直接拒绝，
+	// 不再兜底转发到第一个 provider——避免按量付费模型被意外消费。
 	return candidates
+}
+
+// modelMatches 支持通配符匹配：
+//   - "*" 匹配一切
+//   - "xxx*" 前缀匹配（如 "glm-4-flash*"）
+//   - "*:free" 后缀匹配（OpenRouter 免费模型统一带 :free 后缀，付费模型无此后缀）
+//   - 其余按精确字符串匹配
+func modelMatches(pattern, model string) bool {
+	if pattern == "*" {
+		return true
+	}
+	if strings.HasSuffix(pattern, "*") {
+		return strings.HasPrefix(model, strings.TrimSuffix(pattern, "*"))
+	}
+	if strings.HasPrefix(pattern, "*") {
+		return strings.HasSuffix(model, strings.TrimPrefix(pattern, "*"))
+	}
+	return pattern == model
 }
 
 func (gw *Gateway) handleStreamResponse(w http.ResponseWriter, r *http.Request, p *Provider, impl ProviderImpl, body []byte, req *ChatCompletionRequest, start time.Time) error {

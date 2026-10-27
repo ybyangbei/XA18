@@ -72,13 +72,13 @@ jobs:
           #    4b. ui.js apply：保存并应用恒走 apply_unchecked（立即 commit+apply，无 90s 回滚确认）
           #    4c. cbi.lua Map 默认 apply_on_parse=true：老式 lua CBI（含自研 ai-gateway）保存即后端立即 commit+apply
           UIJS=$(find feeds/luci/modules/luci-base -name ui.js -path '*luci-static/resources*' | head -1)
-          CBI=$(find feeds/luci/modules/luci-base -name cbi.lua | head -1)
+          CBI=$(find feeds -name cbi.lua 2>/dev/null | head -1)
           echo "--- patch targets ---"
           echo "UIJS=$UIJS"
           echo "CBI=$CBI"
           [ -n "$UIJS" ] && sed -i 's/selected=i;break;}}}/selected=i;break;}}}if(selected===null)selected=0;/' "$UIJS" || { echo "FATAL: ui.js not found"; exit 1; }
           sed -i "s/apply_rollback':'apply_unchecked/apply_unchecked':'apply_unchecked/" "$UIJS"
-          [ -n "$CBI" ] && sed -i 's/self.apply_on_parse = nil/self.apply_on_parse = true/' "$CBI" || { echo "FATAL: cbi.lua not found"; exit 1; }
+          [ -n "$CBI" ] && sed -i 's/self.apply_on_parse = nil/self.apply_on_parse = true/' "$CBI" || { echo "FATAL: cbi.lua not found anywhere in feeds"; exit 1; }
           echo "--- patch verify ---"
           grep -q 'if(selected===null)selected=0' "$UIJS" && echo "PATCH 4a OK" || { echo "FATAL: 4a not applied"; exit 1; }
           grep -q "apply_unchecked':'apply_unchecked" "$UIJS" && echo "PATCH 4b OK" || { echo "FATAL: 4b not applied"; exit 1; }
