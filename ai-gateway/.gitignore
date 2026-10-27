@@ -1,3 +1,4 @@
-# 构建产物（勿提交）
-ai-gateway
-ai-gateway.exe
+# 构建产物（勿提交）——仅忽略本目录根下的二进制，勿用裸名以免误伤
+# files/etc/init.d/ai-gateway 等同名文件
+/ai-gateway
+/ai-gateway.exe

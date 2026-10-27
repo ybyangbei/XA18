@@ -1,0 +1,6 @@
+{
+  "listen": ":3001",
+  "gateway_key": "change-me",
+  "log_file": "/tmp/ai-gateway.log",
+  "providers": []
+}
