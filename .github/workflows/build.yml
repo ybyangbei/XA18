@@ -103,13 +103,16 @@ jobs:
         run: |
           cd openwrt/bin/targets/qualcommax/ipq60xx
           TAG="ax18-build-$(date +%Y%m%d)-${GITHUB_RUN_NUMBER}"
-          FILES=$(ls *.ubi *.bin *.manifest 2>/dev/null || true; cat sha256sums 2>/dev/null || true)
-          gh release create "$TAG" $FILES --repo "${GITHUB_REPOSITORY}" \
+          shopt -s nullglob
+          FILES=(*.ubi *.bin *.manifest sha256sums)
+          echo "Assets: ${FILES[*]}"
+          gh release create "$TAG" "${FILES[@]}" --repo "${GITHUB_REPOSITORY}" \
             --title "AX18 LibWrt 25.12-nss" \
             --notes "CMIOT AX18 firmware. NO WiFi drivers included (intentional per owner). NSS ECM enabled (D-01). AI Gateway (Go, arm64) + LuCI app included."
           echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Upload artifacts
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: ax18-libwrt-2512-bin
