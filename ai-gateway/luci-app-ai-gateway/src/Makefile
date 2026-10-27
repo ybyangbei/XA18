@@ -6,9 +6,25 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=ai-gateway
 PKG_RELEASE:=1
 
+# 使用 feeds 中的 golang host package 进行交叉编译
+HOST_BUILD_DEPENDS:=golang/host
+
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 
 include $(INCLUDE_DIR)/package.mk
+
+# 使用 GoPackage 宏简化交叉编译
+include $(INCLUDE_DIR)/golang.mk
+
+# Go 包路径
+GO_PKG:=github.com/your-org/ai-gateway
+GO_PKG_LDFLAGS:=-s -w
+GO_PKG_BUILD_PKG:=$(GO_PKG)
+
+# 设置目标架构
+export GOOS:=linux
+export GOARCH:=arm64
+export CGO_ENABLED:=0
 
 define Package/ai-gateway
   SECTION:=utils
@@ -24,21 +40,18 @@ define Package/ai-gateway/description
 endef
 
 define Build/Prepare
-	mkdir -p $(PKG_BUILD_DIR)
-	$(CP) ./src/* $(PKG_BUILD_DIR)/
+	mkdir -p $(PKG_BUILD_DIR)/src/$(GO_PKG)
+	$(CP) ./src/* $(PKG_BUILD_DIR)/src/$(GO_PKG)/
 endef
 
-define Build/Configure
-	# 无需特殊配置
-endef
+# 使用 golang.mk 提供的 Build/Compile
+# 它会自动调用正确的交叉编译器
 
 define Build/Compile
-	# 交叉编译 for arm64
-	cd $(PKG_BUILD_DIR) && \
-		GOOS=linux \
-		GOARCH=arm64 \
-		CGO_ENABLED=0 \
-		go build -trimpath -ldflags "-s -w" -o $(PKG_BUILD_DIR)/ai-gateway .
+	# 使用 golang.mk 的编译逻辑
+	$(call GoPackage/Build/Compile)
+	# 确保二进制在预期位置
+	cp $(PKG_BUILD_DIR)/src/$(GO_PKG)/ai-gateway $(PKG_BUILD_DIR)/ai-gateway
 endef
 
 define Package/ai-gateway/install
