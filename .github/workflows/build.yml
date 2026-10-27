@@ -72,37 +72,37 @@ jobs:
           #    4b. ui.js apply：保存并应用恒走 apply_unchecked（立即 commit+apply，无 90s 回滚确认）
           #    4c. cbi.lua Map 默认 apply_on_parse=true：老式 lua CBI（含自研 ai-gateway）保存即后端立即 commit+apply
           UIJS=$(find feeds/luci/modules/luci-base -name ui.js -path '*luci-static/resources*' | head -1)
-          CBI=$(find feeds/luci/modules/luci-base -path '*model/cbi.lua' | head -1)
+          CBI=$(find feeds/luci/modules/luci-base -name cbi.lua | head -1)
           echo "--- patch targets ---"
           echo "UIJS=$UIJS"
           echo "CBI=$CBI"
-          sed -i 's/selected=i;break;}}}/selected=i;break;}}}if(selected===null)selected=0;/' "$UIJS"
+          [ -n "$UIJS" ] && sed -i 's/selected=i;break;}}}/selected=i;break;}}}if(selected===null)selected=0;/' "$UIJS" || { echo "FATAL: ui.js not found"; exit 1; }
           sed -i "s/apply_rollback':'apply_unchecked/apply_unchecked':'apply_unchecked/" "$UIJS"
-          sed -i 's/self.apply_on_parse = nil/self.apply_on_parse = true/' "$CBI"
+          [ -n "$CBI" ] && sed -i 's/self.apply_on_parse = nil/self.apply_on_parse = true/' "$CBI" || { echo "FATAL: cbi.lua not found"; exit 1; }
           echo "--- patch verify ---"
-          grep -c 'if(selected===null)selected=0' "$UIJS"
-          grep -c "apply_unchecked':'apply_unchecked" "$UIJS"
-          grep -c 'apply_on_parse = true' "$CBI"
+          grep -q 'if(selected===null)selected=0' "$UIJS" && echo "PATCH 4a OK" || { echo "FATAL: 4a not applied"; exit 1; }
+          grep -q "apply_unchecked':'apply_unchecked" "$UIJS" && echo "PATCH 4b OK" || { echo "FATAL: 4b not applied"; exit 1; }
+          grep -q 'apply_on_parse = true' "$CBI" && echo "PATCH 4c OK" || { echo "FATAL: 4c not applied"; exit 1; }
 
           # 5) nlbwmon 显示页：oui.json（raw.githubusercontent.com）外部请求 3s 超时
           #    设备实测：GitHub 被墙时该请求挂起 → Promise.all 永不 resolve → 整页卡"加载视图中…"
           NLBWDISP=$(find feeds/luci/applications/luci-app-nlbwmon -name display.js -path '*view/nlbw*' | head -1)
           echo "NLBWDISP=$NLBWDISP"
-          awk '{gsub(/request\.get\(url,\{cache:true\}\)/,"Promise.race([request.get(url,{cache:true}),new Promise(function(rs){setTimeout(function(){rs(null)},3000)})])");print}' "$NLBWDISP" > /tmp/nlbw_display.js && mv /tmp/nlbw_display.js "$NLBWDISP"
+          [ -n "$NLBWDISP" ] && awk '{gsub(/request\.get\(url,\{cache:true\}\)/,"Promise.race([request.get(url,{cache:true}),new Promise(function(rs){setTimeout(function(){rs(null)},3000)})])");print}' "$NLBWDISP" > /tmp/nlbw_display.js && mv /tmp/nlbw_display.js "$NLBWDISP" || { echo "FATAL: nlbw display.js not found"; exit 1; }
           echo "--- nlbw display.js verify ---"
-          grep -c 'Promise.race' "$NLBWDISP"
+          grep -q 'Promise.race' "$NLBWDISP" && echo "PATCH 5 OK" || { echo "FATAL: 5 not applied"; exit 1; }
 
           # 6) KMS / SmartDNS 默认启用（需求 AC-09：开箱即用）
           #    设备实测：enabled=1 + /etc/init.d/xxx enable 后 vlmcsd 监听 1688、smartdns 接管 53 且 DNS 解析正常
-          VLM_CFG=$(find feeds package -path '*vlmcsd*/etc/config/vlmcsd' 2>/dev/null | head -1)
-          SD_CFG=$(find feeds -path '*smartdns*/etc/config/smartdns' 2>/dev/null | head -1)
+          VLM_CFG=$(find feeds package -path '*vlmcsd*' -name vlmcsd 2>/dev/null | grep -E 'etc/config' | head -1)
+          SD_CFG=$(find feeds -path '*smartdns*' -name smartdns 2>/dev/null | grep -E 'etc/config' | head -1)
           echo "VLM_CFG=$VLM_CFG"
           echo "SD_CFG=$SD_CFG"
           [ -n "$VLM_CFG" ] && sed -i "s/option enabled '0'/option enabled '1'/" "$VLM_CFG"
           [ -n "$SD_CFG" ] && sed -i "s/option enabled '0'/option enabled '1'/" "$SD_CFG"
           echo "--- KMS/SmartDNS default verify ---"
-          [ -n "$VLM_CFG" ] && grep -n "option enabled" "$VLM_CFG" | head -2
-          [ -n "$SD_CFG" ] && grep -n "^[[:space:]]*option enabled" "$SD_CFG" | head -2
+          if [ -n "$VLM_CFG" ] && grep -q "option enabled '1'" "$VLM_CFG"; then echo "PATCH 6a OK"; else echo "WARN: vlmcsd config not found/modified (AC-09 needs manual check)"; fi
+          if [ -n "$SD_CFG" ] && grep -q "option enabled '1'" "$SD_CFG"; then echo "PATCH 6b OK"; else echo "WARN: smartdns config not found/modified (needs manual check)"; fi
 
       - name: Apply .config
         run: |
