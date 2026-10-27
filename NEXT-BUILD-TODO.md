@@ -143,4 +143,17 @@ ip link set lan3 name lan1; ip link set lan_tmp name lan3
 
 **取舍说明**：全局 apply_unchecked 后，改网络类配置失败时**不再自动回滚**（符合"立即生效、应用（不检查）"的需求方明确倾向）；如需保留回滚保护，仅对特定页面改回 `apply_rollback`。
 
+## 4) nlbw 带宽监控页卡"加载视图中…" ✅（build.yml Step 5）
+
+**根因**：`view/nlbw/display.js` 的 `loadOUI()` 请求 `raw.githubusercontent.com/.../oui.json`（MAC 厂商库），GitHub 被墙时请求挂起 → `load()` 的 `Promise.all` 永不 resolve → 整页转圈。
+**修复**：oui.json 请求加 3s 超时（`Promise.race`），超时放弃不阻塞页面：
+```bash
+awk '{gsub(/request\.get\(url,\{cache:true\}\)/,"Promise.race([request.get(url,{cache:true}),new Promise(function(rs){setTimeout(function(){rs(null)},3000)})])");print}' "$NLBWDISP" > /tmp/n && mv /tmp/n "$NLBWDISP"
+```
+**实测**：nlbw 页 5s 内渲染、流量数据显示、无错误（oui 请求挂起也不再阻塞）。
+
+## 5) KMS / SmartDNS 默认启用 ✅（build.yml Step 6）
+
+设备实测：`vlmcsd.config.enabled=1` → 1688 监听（IPv4+IPv6）；`smartdns.@smartdns[0].enabled=1` → smartdns 接管 53、dnsmasq 保留 DHCP/本地域、LAN DNS 解析正常。build.yml Step 6 对包源码默认配置 sed `option enabled '0'→'1'`。
+
 

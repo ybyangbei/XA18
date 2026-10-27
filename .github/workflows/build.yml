@@ -92,6 +92,18 @@ jobs:
           echo "--- nlbw display.js verify ---"
           grep -c 'Promise.race' "$NLBWDISP"
 
+          # 6) KMS / SmartDNS 默认启用（需求 AC-09：开箱即用）
+          #    设备实测：enabled=1 + /etc/init.d/xxx enable 后 vlmcsd 监听 1688、smartdns 接管 53 且 DNS 解析正常
+          VLM_CFG=$(find feeds package -path '*vlmcsd*/etc/config/vlmcsd' 2>/dev/null | head -1)
+          SD_CFG=$(find feeds -path '*smartdns*/etc/config/smartdns' 2>/dev/null | head -1)
+          echo "VLM_CFG=$VLM_CFG"
+          echo "SD_CFG=$SD_CFG"
+          [ -n "$VLM_CFG" ] && sed -i "s/option enabled '0'/option enabled '1'/" "$VLM_CFG"
+          [ -n "$SD_CFG" ] && sed -i "s/option enabled '0'/option enabled '1'/" "$SD_CFG"
+          echo "--- KMS/SmartDNS default verify ---"
+          [ -n "$VLM_CFG" ] && grep -n "option enabled" "$VLM_CFG" | head -2
+          [ -n "$SD_CFG" ] && grep -n "^[[:space:]]*option enabled" "$SD_CFG" | head -2
+
       - name: Apply .config
         run: |
           cd openwrt
