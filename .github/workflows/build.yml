@@ -1,4 +1,4 @@
-name: Build CMIOT AX18 (LibWrt 25.12-nss)
+name: Build CMIOT AX18 (LEDE NSS, kernel 6.12)
 
 on:
   push:
@@ -6,8 +6,12 @@ on:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/LiBwrt/LibWrt
-  REPO_BRANCH: 25.12-nss
+  # 2026-10-28 由 LibWrt 25.12-nss 切换为 coolsnnowwolf/lede master：
+  #   - LEDE 源码（qualcommax/ipq60xx 目标，内核 6.12，NSS 为 target 默认包）
+  #   - cmiot_ax18 机型原生支持（无需移植）
+  #   - feeds 自带 openclash / smartdns / vlmcsd（已逐一核实）
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
 
 jobs:
   build:
@@ -36,7 +40,7 @@ jobs:
             pkg-config swig rsync unzip zlib1g-dev file wget zstd ccache xsltproc device-tree-compiler jq \
             golang-go
 
-      - name: Clone LibWrt source
+      - name: Clone LEDE source
         run: |
           git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" openwrt
 
@@ -53,18 +57,31 @@ jobs:
           # 1) 安装 AI Gateway LuCI 包（Go 源码自包含在 src/ 子目录）
           cp -r "${GITHUB_WORKSPACE}/ai-gateway/luci-app-ai-gateway" package/luci-app-ai-gateway
 
-          # 2) 网口顺序修正：lan1 ↔ lan3 对调（ipq6000-cmiot.dtsi）
-          DTS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
-          sed -i 's/label = "lan3"/label = "LAN_TMP"/; s/label = "lan1"/label = "lan3"/; s/label = "LAN_TMP"/label = "lan1"/' "$DTS"
-          echo "--- DTS 校验 ---"
-          grep -n 'label = "' "$DTS"
+          # 2) 网口顺序修正：lan1 ↔ lan3 对调（LEDE 设备树 target/linux/qualcommax/dts/ipq6000-ax18.dts）
+          #    原始映射 dp1=lan3 dp2=lan2 dp4=lan1 dp5=wan（软件命名与机壳丝印相反）
+          #    修正后 dp1=lan1 dp2=lan2 dp4=lan3 dp5=wan
+          DTS=target/linux/qualcommax/dts/ipq6000-ax18.dts
+          if [ -f "$DTS" ]; then
+            sed -i 's/label = "lan3"/label = "LAN_TMP"/; s/label = "lan1"/label = "lan3"/; s/label = "LAN_TMP"/label = "lan1"/' "$DTS"
+            echo "--- DTS 校验 ---"
+            grep -n 'label = "' "$DTS"
+          else
+            echo "FATAL: $DTS not found (LEDE tree layout changed?)"
+            exit 1
+          fi
 
           # 3) LuCI 禁用配置校验（rollback=0 即不等待确认直接生效）
-          sed -i 's/\toption rollback 90/\toption rollback 0/' feeds/luci/modules/luci-base/root/etc/config/luci
-          sed -i 's/max(timeout, 90)/max(timeout, 5)/' feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
+          LUCI_CFG=$(find feeds/luci/modules/luci-base -path '*etc/config/luci' | head -1)
+          UCI_UC=$(find feeds/luci/modules/luci-base -name uci.uc -path '*controller/admin*' | head -1)
+          [ -n "$LUCI_CFG" ] || { echo "FATAL: luci config not found"; exit 1; }
+          [ -n "$UCI_UC" ] || { echo "FATAL: uci.uc not found"; exit 1; }
+          echo "LUCI_CFG=$LUCI_CFG"
+          echo "UCI_UC=$UCI_UC"
+          sed -i 's/\toption rollback 90/\toption rollback 0/' "$LUCI_CFG"
+          sed -i 's/max(timeout, 90)/max(timeout, 5)/' "$UCI_UC"
           echo "--- LuCI rollback 校验 ---"
-          grep -E "rollback|max\(timeout" feeds/luci/modules/luci-base/root/etc/config/luci
-          grep -E "max\(timeout" feeds/luci/modules/luci-base/ucode/controller/admin/uci.uc
+          grep -E "rollback|max\(timeout" "$LUCI_CFG"
+          grep -E "max\(timeout" "$UCI_UC"
 
           # 4) LuCI 前端/框架补丁（设备实测：仅改配置 rollback=0 前端 JS 不识别，仍走 90s 回滚）
           #    4a. ui.js initTabGroup：tab 全空时 selected 兜底为 0，修复页面初始化崩溃
@@ -120,16 +137,20 @@ jobs:
           [ -n "$NLBWDISP" ] && grep -q 'Promise.race' "$NLBWDISP" && echo "PATCH 5 OK" || echo "WARN: 5 not applied"
 
           # 6) KMS / SmartDNS 默认启用（需求 AC-09：开箱即用）
-          #    设备实测：enabled=1 + /etc/init.d/xxx enable 后 vlmcsd 监听 1688、smartdns 接管 53 且 DNS 解析正常
-          VLM_CFG=$(find feeds package -path '*vlmcsd*' -name vlmcsd 2>/dev/null | grep -E 'etc/config' | head -1)
-          SD_CFG=$(find feeds -path '*smartdns*' -name smartdns 2>/dev/null | grep -E 'etc/config' | head -1)
-          echo "VLM_CFG=$VLM_CFG"
-          echo "SD_CFG=$SD_CFG"
-          [ -n "$VLM_CFG" ] && sed -i "s/option enabled '0'/option enabled '1'/" "$VLM_CFG"
-          [ -n "$SD_CFG" ] && sed -i "s/option enabled '0'/option enabled '1'/" "$SD_CFG"
-          echo "--- KMS/SmartDNS default verify ---"
-          if [ -n "$VLM_CFG" ] && grep -q "option enabled '1'" "$VLM_CFG"; then echo "PATCH 6a OK"; else echo "WARN: vlmcsd config not found/modified (AC-09 needs manual check)"; fi
-          if [ -n "$SD_CFG" ] && grep -q "option enabled '1'" "$SD_CFG"; then echo "PATCH 6b OK"; else echo "WARN: smartdns config not found/modified (needs manual check)"; fi
+          #    vlmcsd / smartdns 的默认配置文件随各自源码包分发（feed 树内不存在可 patch 的配置，
+          #    smartdns 默认 enabled=0 在 pymumu 源码包里），因此改为注入 uci-defaults 首启脚本：
+          #    buildroot 根目录 files/ 会自动合入 rootfs，首次开机自动 enabled=1 + 服务 enable，
+          #    幂等且不依赖 feed 布局
+          mkdir -p files/etc/uci-defaults
+          cat > files/etc/uci-defaults/99-ax18-enable <<'EOF'
+          #!/bin/sh
+          uci -q set vlmcsd.config.enabled='1' && uci -q commit vlmcsd && /etc/init.d/vlmcsd enable 2>/dev/null
+          uci -q set smartdns.@smartdns[0].enabled='1' && uci -q commit smartdns && /etc/init.d/smartdns enable 2>/dev/null
+          exit 0
+          EOF
+          chmod +x files/etc/uci-defaults/99-ax18-enable
+          echo "--- uci-defaults injected ---"
+          cat files/etc/uci-defaults/99-ax18-enable
 
       - name: Apply .config
         run: |
@@ -137,10 +158,28 @@ jobs:
           cp -f "${GITHUB_WORKSPACE}/.config" .config
           make defconfig
 
-      - name: Sanity check
+      - name: Sanity check (hard-fail on missing key packages)
         run: |
           cd openwrt
-          grep -E 'CONFIG_TARGET_qualcommax|cmiot_ax18|nss|zh_Hans|luci-app-ai-gateway|vlmcsd' .config | head -20
+          echo "--- .config key symbols (hard-fail) ---"
+          for pat in \
+            'CONFIG_TARGET_qualcommax=y' \
+            'CONFIG_TARGET_qualcommax_ipq60xx=y' \
+            'CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_cmiot_ax18=y' \
+            'CONFIG_PACKAGE_kmod-qca-nss-drv=y' \
+            'CONFIG_PACKAGE_kmod-qca-nss-dp=y' \
+            'CONFIG_PACKAGE_kmod-qca-nss-ecm=y' \
+            'CONFIG_PACKAGE_luci-app-openclash=y' \
+            'CONFIG_PACKAGE_smartdns=y' \
+            'CONFIG_PACKAGE_luci-app-smartdns=y' \
+            'CONFIG_PACKAGE_vlmcsd=y' \
+            'CONFIG_PACKAGE_luci-app-vlmcsd=y' \
+            'CONFIG_PACKAGE_luci-app-ai-gateway=y' ; do
+            grep -q "$pat" .config || { echo "FATAL: missing $pat (package/feed not resolved by defconfig?)"; exit 1; }
+          done
+          echo "OK: all key symbols present"
+          echo "--- zh_Hans (warn-only; LEDE LuCI 默认中文) ---"
+          grep -E 'CONFIG_LUCI_LANG_zh_Hans|luci-i18n' .config | head -5 || true
 
       - name: Download sources
         run: |
@@ -159,7 +198,7 @@ jobs:
       - name: Sanity check NSS + ECM
         run: |
           cd openwrt
-          grep -E 'CONFIG_PACKAGE_kmod-qca-nss-drv=y|CONFIG_PACKAGE_kmod-qca-nss-dp=y|CONFIG_PACKAGE_kmod-qca-nss-ecm=y|CONFIG_PACKAGE_kmod-nss-ifb=y' .config
+          grep -E 'CONFIG_PACKAGE_kmod-qca-nss-drv=y|CONFIG_PACKAGE_kmod-qca-nss-dp=y|CONFIG_PACKAGE_kmod-qca-nss-ecm=y' .config
 
       - name: Publish release
         if: success()
@@ -172,15 +211,15 @@ jobs:
           FILES=(*.ubi *.bin *.manifest sha256sums)
           echo "Assets: ${FILES[*]}"
           gh release create "$TAG" "${FILES[@]}" --repo "${GITHUB_REPOSITORY}" \
-            --title "AX18 LibWrt 25.12-nss" \
-            --notes "CMIOT AX18 firmware. NO WiFi drivers included (intentional per owner). NSS ECM enabled (D-01). AI Gateway (Go, arm64) + LuCI app included."
+            --title "AX18 LEDE NSS" \
+            --notes "CMIOT AX18 firmware. Source: coolsnnowwolf/lede master (kernel 6.12, NSS ECM built-in). NO WiFi drivers included (intentional per owner). AI Gateway (Go, arm64) + LuCI app included."
           echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Upload artifacts
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ax18-libwrt-2512-bin
+          name: ax18-lede-bin
           path: |
             openwrt/bin/targets/
             openwrt/bin/packages/

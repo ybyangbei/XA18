@@ -60,6 +60,7 @@ CI 中已添加 LuCI patch（`build.yml` → `Prepare custom packages & patches`
 
 ```bash
 # 路径（LibWrt 25.12-nss）：target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+# 路径（LEDE master，2026-10-28 切换后）：target/linux/qualcommax/dts/ipq6000-ax18.dts（label 映射相同：dp1=lan3 dp2=lan2 dp4=lan1 dp5=wan）
 DTS=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
 sed -i 's/label = "lan3"/label = "LAN_SWAP"/; s/label = "lan1"/label = "lan3"/; s/label = "LAN_SWAP"/label = "lan1"/' "$DTS"
 grep -n 'label = "' "$DTS"   # 校验：dp1=lan1, dp2=lan2, dp4=lan3, dp5=wan

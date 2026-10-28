@@ -89,7 +89,7 @@ curl http://127.0.0.1:3001/v1/chat/completions \
 `luci-app-ai-gateway/` 为自包含的 OpenWrt 包（Go 源码在 `src/` 子目录）：
 
 ```sh
-# 在 OpenWrt/LibWrt 源码树中
+# 在 OpenWrt/LibWrt/LEDE 源码树中
 cp -r luci-app-ai-gateway package/
 ./scripts/feeds install luci-app-ai-gateway   # 如需 feeds 注册
 make package/luci-app-ai-gateway/compile

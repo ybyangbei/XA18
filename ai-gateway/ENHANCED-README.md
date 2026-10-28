@@ -216,7 +216,7 @@ make install
 ## 版本信息
 
 - **版本**: v0.3.0 (增强版)
-- **兼容**: OpenWrt 25.12-nss
+- **兼容**: OpenWrt 25.12 / LEDE (coolsnowwolf/lede master, 内核 6.12)
 - **架构**: arm64 (IPQ60xx)
 - **依赖**: 无外部依赖（纯 Go 标准库）
 
