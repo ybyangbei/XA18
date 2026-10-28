@@ -1,4 +1,4 @@
-name: Build CMIOT AX18 (LEDE NSS, kernel 6.12)
+name: Build CMIOT AX18 (LEDE NSS + WiFi + ZeroTier, kernel 6.12)
 
 on:
   push:
@@ -6,10 +6,8 @@ on:
   workflow_dispatch:
 
 env:
-  # 2026-10-28 由 LibWrt 25.12-nss 切换为 coolsnnowwolf/lede master：
-  #   - LEDE 源码（qualcommax/ipq60xx 目标，内核 6.12，NSS 为 target 默认包）
-  #   - cmiot_ax18 机型原生支持（无需移植）
-  #   - feeds 自带 openclash / smartdns / vlmcsd（已逐一核实）
+  # 源码: coolsnnowwolf/lede master（LEDE, qualcommax/ipq60xx, 内核 6.12, NSS 为 target 默认包）
+  # 机型: cmiot_ax18 原生支持；feeds 自带 openclash / smartdns / vlmcsd / zerotier（逐一核实）
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
 
@@ -37,9 +35,9 @@ jobs:
           sudo apt-get install -y \
             binutils bzip2 clang flex bison g++ gawk gcc gcc-multilib g++-multilib \
             gettext git libncurses-dev libssl-dev patch python3 python3-setuptools \
-            pkg-config swig rsync unzip zlib1g-dev file wget zstd ccache xsltproc device-tree-compiler jq \
-            golang-go
+            pkg-config swig rsync unzip zlib1g-dev file wget zstd ccache xsltproc device-tree-compiler jq
 
+      # ================= LEDE 标准构建流程 =================
       - name: Clone LEDE source
         run: |
           git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" openwrt
@@ -50,107 +48,81 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Prepare custom packages & patches
+      - name: Device tree patches (网口顺序修正 + 启用无线)
+        run: |
+          cd openwrt
+          DTS=target/linux/qualcommax/dts/ipq6000-ax18.dts
+          [ -f "$DTS" ] || { echo "FATAL: $DTS not found (LEDE tree layout changed?)"; exit 1; }
+
+          # 1) 网口顺序：lan1 ↔ lan3 对调（软件命名与机壳丝印相反）
+          #    原始映射 dp1=lan3 dp2=lan2 dp4=lan1 dp5=wan → 修正后 dp1=lan1 dp2=lan2 dp4=lan3 dp5=wan
+          sed -i 's/label = "lan3"/label = "LAN_TMP"/; s/label = "lan1"/label = "lan3"/; s/label = "LAN_TMP"/label = "lan1"/' "$DTS"
+
+          # 2) 启用无线：LEDE 的 AX18 设备树 &wifi 节点默认 status="disabled"，需置为 okay
+          #    （否则即使安装 ath11k 驱动，射频也不会 probe）
+          sed -i '/&wifi {/,/};/s/status = "disabled";/status = "okay";/' "$DTS"
+
+          echo "--- DTS verify ---"
+          grep -n 'label = "' "$DTS"
+          grep -n -A2 '&wifi {' "$DTS"
+
+      - name: LuCI patches (保存并应用立即生效，无 90s 回滚确认)
         run: |
           cd openwrt
 
-          # 1) 安装 AI Gateway LuCI 包（Go 源码自包含在 src/ 子目录）
-          cp -r "${GITHUB_WORKSPACE}/ai-gateway/luci-app-ai-gateway" package/luci-app-ai-gateway
-
-          # 2) 网口顺序修正：lan1 ↔ lan3 对调（LEDE 设备树 target/linux/qualcommax/dts/ipq6000-ax18.dts）
-          #    原始映射 dp1=lan3 dp2=lan2 dp4=lan1 dp5=wan（软件命名与机壳丝印相反）
-          #    修正后 dp1=lan1 dp2=lan2 dp4=lan3 dp5=wan
-          DTS=target/linux/qualcommax/dts/ipq6000-ax18.dts
-          if [ -f "$DTS" ]; then
-            sed -i 's/label = "lan3"/label = "LAN_TMP"/; s/label = "lan1"/label = "lan3"/; s/label = "LAN_TMP"/label = "lan1"/' "$DTS"
-            echo "--- DTS 校验 ---"
-            grep -n 'label = "' "$DTS"
-          else
-            echo "FATAL: $DTS not found (LEDE tree layout changed?)"
-            exit 1
-          fi
-
-          # 3) LuCI 禁用配置校验（rollback=0 即不等待确认直接生效）
-          LUCI_CFG=$(find feeds/luci/modules/luci-base -path '*etc/config/luci' | head -1)
-          UCI_UC=$(find feeds/luci/modules/luci-base -name uci.uc -path '*controller/admin*' | head -1)
-          [ -n "$LUCI_CFG" ] || { echo "FATAL: luci config not found"; exit 1; }
-          [ -n "$UCI_UC" ] || { echo "FATAL: uci.uc not found"; exit 1; }
-          echo "LUCI_CFG=$LUCI_CFG"
-          echo "UCI_UC=$UCI_UC"
-          sed -i 's/\toption rollback 90/\toption rollback 0/' "$LUCI_CFG"
-          sed -i 's/max(timeout, 90)/max(timeout, 5)/' "$UCI_UC"
-          echo "--- LuCI rollback 校验 ---"
-          grep -E "rollback|max\(timeout" "$LUCI_CFG"
-          grep -E "max\(timeout" "$UCI_UC"
-
-          # 4) LuCI 前端/框架补丁（设备实测：仅改配置 rollback=0 前端 JS 不识别，仍走 90s 回滚）
-          #    4a. ui.js initTabGroup：tab 全空时 selected 兜底为 0，修复页面初始化崩溃
-          #        （崩溃会中断 init 链，导致"保存并应用"按钮事件未绑定、部分页面卡"加载视图中…"）
-          #    4b. ui.js apply：保存并应用恒走 apply_unchecked（立即 commit+apply，无 90s 回滚确认）
-          #    4c. cbi.lua Map 默认 apply_on_parse=true：老式 lua CBI（含自研 ai-gateway）保存即后端立即 commit+apply
+          # 1) 前端 ui.js：所有 apply 恒走 apply_unchecked（立即 commit+apply，无回滚确认窗口）
+          #    LEDE 25.12 新版写法为三目运算：checked ? 'apply_rollback' : 'apply_unchecked'
+          #    旧版（LibWrt 等）为对象简写：'apply_rollback':'apply_unchecked'
           UIJS=$(find feeds/luci/modules/luci-base -name ui.js -path '*luci-static/resources*' | head -1)
-          CBI=$(find feeds -name cbi.lua 2>/dev/null | head -1)
-          echo "--- patch targets ---"
           echo "UIJS=$UIJS"
-          echo "CBI=$CBI"
-          # 4a: initTabGroup 空 tab 兜底（老版 ui.js 需要；新版上游已内置 selected===null 处理 → SKIP）
-          if [ -n "$UIJS" ] && grep -q 'selected=i;break;}}}' "$UIJS"; then
-            sed -i 's/selected=i;break;}}}/selected=i;break;}}}if(selected===null)selected=0;/' "$UIJS"
-            echo "PATCH 4a APPLIED (legacy pattern)"
-          elif [ -n "$UIJS" ] && grep -q 'selected === null' "$UIJS"; then
-            echo "PATCH 4a SKIP: upstream ui.js already guards selected===null"
-          else
-            echo "WARN: ui.js null-guard pattern unknown"
-            grep -n 'selected = i\|selected===null\|selected === null' "$UIJS" 2>/dev/null | head -5
-          fi
-          # 4b: 保存并应用立即生效（无 90s 回滚确认）——老版 apply_rollback 分支 → apply_unchecked
-          if [ -n "$UIJS" ] && grep -q "apply_rollback':'apply_unchecked" "$UIJS"; then
+          [ -n "$UIJS" ] || { echo "FATAL: ui.js not found"; exit 1; }
+          if grep -q "checked ? 'apply_rollback' : 'apply_unchecked'" "$UIJS"; then
+            sed -i "s/checked ? 'apply_rollback' : 'apply_unchecked'/'apply_unchecked'/g" "$UIJS"
+            echo "PATCH apply-unchecked APPLIED (new-style ternary)"
+          elif grep -q "apply_rollback':'apply_unchecked" "$UIJS"; then
             sed -i "s/apply_rollback':'apply_unchecked/apply_unchecked':'apply_unchecked/" "$UIJS"
-            echo "PATCH 4b APPLIED"
+            echo "PATCH apply-unchecked APPLIED (legacy object)"
           else
-            echo "WARN: 4b pattern not found (check apply logic in new ui.js)"
+            echo "WARN: apply_rollback/apply_unchecked pattern not found"
             grep -n 'apply_rollback\|apply_unchecked' "$UIJS" 2>/dev/null | head -8
           fi
-          # 4c: cbi.lua 老式 CBI 保存即 apply（luci-compat 兼容层）
+          echo "--- ui.js verify ---"
+          grep -n "apply_unchecked" "$UIJS" | head -5
+
+          # 2) initTabGroup 空 tab 兜底（老版 ui.js 需要；新版上游已内置 selected===null 处理 → SKIP）
+          if [ -n "$UIJS" ] && grep -q 'selected=i;break;}}}' "$UIJS"; then
+            sed -i 's/selected=i;break;}}}/selected=i;break;}}}if(selected===null)selected=0;/' "$UIJS"
+            echo "PATCH initTabGroup APPLIED (legacy pattern)"
+          elif [ -n "$UIJS" ] && grep -q 'selected === null' "$UIJS"; then
+            echo "PATCH initTabGroup SKIP: upstream ui.js already guards selected===null"
+          else
+            echo "WARN: ui.js null-guard pattern unknown"
+          fi
+
+          # 3) cbi.lua：老式 lua CBI（luci-compat 运行时）默认 apply_on_parse=true → 保存即后端立即 commit+apply
+          CBI=$(find feeds -name cbi.lua 2>/dev/null | head -1)
+          echo "CBI=$CBI"
           if [ -n "$CBI" ] && grep -q 'self.apply_on_parse = nil' "$CBI"; then
             sed -i 's/self.apply_on_parse = nil/self.apply_on_parse = true/' "$CBI"
-            echo "PATCH 4c APPLIED"
+            echo "PATCH cbi.apply_on_parse APPLIED"
           elif [ -n "$CBI" ] && grep -q 'apply_on_parse' "$CBI"; then
             echo "WARN: cbi.lua has apply_on_parse but different pattern"
             grep -n 'apply_on_parse' "$CBI" | head -5
           else
-            echo "WARN: cbi.lua has no apply_on_parse (check luci-compat cbi source)"
+            echo "WARN: cbi.lua has no apply_on_parse"
           fi
 
-          # 5) nlbwmon 显示页：oui.json（raw.githubusercontent.com）外部请求 3s 超时
+          # 4) nlbwmon 显示页：oui.json（raw.githubusercontent.com）外部请求 3s 超时
           #    设备实测：GitHub 被墙时该请求挂起 → Promise.all 永不 resolve → 整页卡"加载视图中…"
           NLBWDISP=$(find feeds/luci/applications/luci-app-nlbwmon -name display.js -path '*view/nlbw*' | head -1)
           echo "NLBWDISP=$NLBWDISP"
           if [ -n "$NLBWDISP" ] && grep -q 'request.get(url,{cache:true})' "$NLBWDISP"; then
             awk '{gsub(/request\.get\(url,\{cache:true\}\)/,"Promise.race([request.get(url,{cache:true}),new Promise(function(rs){setTimeout(function(){rs(null)},3000)})])");print}' "$NLBWDISP" > /tmp/nlbw_display.js && mv /tmp/nlbw_display.js "$NLBWDISP"
-            echo "PATCH 5 APPLIED"
+            echo "PATCH nlbw timeout APPLIED"
           else
             echo "WARN: nlbw display.js pattern not found"
-            grep -n 'request.get\|Promise.all\|oui' "$NLBWDISP" 2>/dev/null | head -6
           fi
-          echo "--- nlbw display.js verify ---"
-          [ -n "$NLBWDISP" ] && grep -q 'Promise.race' "$NLBWDISP" && echo "PATCH 5 OK" || echo "WARN: 5 not applied"
-
-          # 6) KMS / SmartDNS 默认启用（需求 AC-09：开箱即用）
-          #    vlmcsd / smartdns 的默认配置文件随各自源码包分发（feed 树内不存在可 patch 的配置，
-          #    smartdns 默认 enabled=0 在 pymumu 源码包里），因此改为注入 uci-defaults 首启脚本：
-          #    buildroot 根目录 files/ 会自动合入 rootfs，首次开机自动 enabled=1 + 服务 enable，
-          #    幂等且不依赖 feed 布局
-          mkdir -p files/etc/uci-defaults
-          cat > files/etc/uci-defaults/99-ax18-enable <<'EOF'
-          #!/bin/sh
-          uci -q set vlmcsd.config.enabled='1' && uci -q commit vlmcsd && /etc/init.d/vlmcsd enable 2>/dev/null
-          uci -q set smartdns.@smartdns[0].enabled='1' && uci -q commit smartdns && /etc/init.d/smartdns enable 2>/dev/null
-          exit 0
-          EOF
-          chmod +x files/etc/uci-defaults/99-ax18-enable
-          echo "--- uci-defaults injected ---"
-          cat files/etc/uci-defaults/99-ax18-enable
+          [ -n "$NLBWDISP" ] && grep -q 'Promise.race' "$NLBWDISP" && echo "PATCH nlbw OK" || true
 
       - name: Apply .config
         run: |
@@ -169,17 +141,21 @@ jobs:
             'CONFIG_PACKAGE_kmod-qca-nss-drv=y' \
             'CONFIG_PACKAGE_kmod-qca-nss-dp=y' \
             'CONFIG_PACKAGE_kmod-qca-nss-ecm=y' \
+            'CONFIG_PACKAGE_kmod-ath11k-ahb=y' \
+            'CONFIG_PACKAGE_ath11k-firmware-ipq6018=y' \
+            'CONFIG_PACKAGE_wpad-openssl=y' \
             'CONFIG_PACKAGE_luci-app-openclash=y' \
             'CONFIG_PACKAGE_smartdns=y' \
             'CONFIG_PACKAGE_luci-app-smartdns=y' \
             'CONFIG_PACKAGE_vlmcsd=y' \
             'CONFIG_PACKAGE_luci-app-vlmcsd=y' \
-            'CONFIG_PACKAGE_luci-app-ai-gateway=y' ; do
+            'CONFIG_PACKAGE_zerotier=y' \
+            'CONFIG_PACKAGE_luci-app-zerotier=y' ; do
             grep -q "$pat" .config || { echo "FATAL: missing $pat (package/feed not resolved by defconfig?)"; exit 1; }
           done
           echo "OK: all key symbols present"
-          echo "--- zh_Hans (warn-only; LEDE LuCI 默认中文) ---"
-          grep -E 'CONFIG_LUCI_LANG_zh_Hans|luci-i18n' .config | head -5 || true
+          echo "--- WiFi 相关包确认 ---"
+          grep -E 'CONFIG_PACKAGE_kmod-ath11k|CONFIG_PACKAGE_ath11k-firmware|CONFIG_PACKAGE_wpad' .config | head -10
 
       - name: Download sources
         run: |
@@ -211,8 +187,8 @@ jobs:
           FILES=(*.ubi *.bin *.manifest sha256sums)
           echo "Assets: ${FILES[*]}"
           gh release create "$TAG" "${FILES[@]}" --repo "${GITHUB_REPOSITORY}" \
-            --title "AX18 LEDE NSS" \
-            --notes "CMIOT AX18 firmware. Source: coolsnnowwolf/lede master (kernel 6.12, NSS ECM built-in). NO WiFi drivers included (intentional per owner). AI Gateway (Go, arm64) + LuCI app included."
+            --title "AX18 LEDE NSS + WiFi + ZeroTier" \
+            --notes "CMIOT AX18 firmware. Source: coolsnnowwolf/lede master (kernel 6.12, NSS ECM built-in). WiFi enabled (ath11k + IPQ6018 firmware + wpad-openssl). ZeroTier included. AI Gateway removed. LuCI save&apply fixed (apply-unchecked)."
           echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Upload artifacts
