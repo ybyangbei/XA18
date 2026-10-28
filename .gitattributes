@@ -1,0 +1,7 @@
+# 强制关键文件使用 LF 换行（GitHub Actions 在 Linux 上运行，
+# .sh 脚本与 .config（Kconfig 解析）必须为 LF，避免 CRLF 引起问题）
+* text=auto
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+.config text eol=lf
