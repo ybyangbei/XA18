@@ -1,28 +1,40 @@
 # ============================================================
-# CMIOT AX18 OpenWrt 云编译工作流
+# CMIOT AX18 / JDCloud AX1800 Pro (亚瑟) OpenWrt 云编译工作流
 # 基于 coolsnowwolf/lede 源码，GitHub Actions 云编译
 # 触发方式：
-#   1) Actions 页面手动点击 Run workflow（推荐）
-#   2) 推送 .config / diy-*.sh / 本文件 到 main 或 master 分支
+#   1) Actions 页面手动点击 Run workflow（推荐），可选编译设备
+#   2) 推送 .config / diy-*.sh / 本文件 到 main 或 master 分支（默认编 AX18）
 # ============================================================
-name: Build OpenWrt - CMIOT AX18
+name: Build OpenWrt - AX18 / 亚瑟
 
 on:
   workflow_dispatch:
+    inputs:
+      device:
+        description: 编译目标设备
+        required: false
+        default: ax18
+        type: choice
+        options:
+          - ax18
+          - jdcloud_re-ss-01
   push:
     branches: ["main", "master"]
     paths:
       - ".config"
+      - "config-jdcloud_re-ss-01"
       - "diy-part1.sh"
       - "diy-part2.sh"
       - ".github/workflows/*.yml"
 
 env:
-  # 源码仓库：默认 coolsnowwolf/lede（原版，无 WiFi，见 README §4）
-  # 如需 WiFi，改为：https://github.com/AnClark/lede-zn-m2-wifi
+  # 源码仓库：默认 coolsnowwolf/lede（原版）
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
-  CONFIG_FILE: .config
+  # push 触发时无 inputs，默认 .config（AX18）
+  CONFIG_FILE: ${{ github.event.inputs.device == 'jdcloud_re-ss-01' && 'config-jdcloud_re-ss-01' || '.config' }}
+  DEVICE_NAME: ${{ github.event.inputs.device == 'jdcloud_re-ss-01' && 'JDCloud AX1800 Pro (亚瑟)' || 'CMIOT AX18' }}
+  ARTIFACT_NAME: ${{ github.event.inputs.device == 'jdcloud_re-ss-01' && 'jdcloud-ax1800pro-openwrt' || 'cmiot-ax18-openwrt' }}
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   # 是否自动发布到 GitHub Releases（true / false）
@@ -66,6 +78,7 @@ jobs:
       - name: 载入自定义配置与脚本（diy-part2.sh）
         run: |
           [ -e files ] && mv files openwrt/files || true
+          echo "编译设备: $DEVICE_NAME (配置: $CONFIG_FILE)"
           [ -e "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
           cd openwrt
           bash "$GITHUB_WORKSPACE/$DIY_P2_SH"
@@ -102,7 +115,7 @@ jobs:
       - name: 上传固件（Actions 附件，可下载 30 天）
         uses: actions/upload-artifact@v4
         with:
-          name: cmiot-ax18-openwrt
+          name: ${{ env.ARTIFACT_NAME }}
           path: artifact/
           retention-days: 30
 
@@ -111,11 +124,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}-${{ github.run_attempt }}
-          name: "CMIOT AX18 固件 #${{ github.run_number }}"
+          name: "${{ env.DEVICE_NAME }} 固件 #${{ github.run_number }}"
           body: |
-            机型：CMIOT AX18（和目 AX18 / IPQ6000 / 256MB / 128MB NAND）
+            机型：${{ env.DEVICE_NAME }}
             源码：${{ env.REPO_URL }}（分支 ${{ env.REPO_BRANCH }}）
-            平台：qualcommax / ipq60xx / cmiot_ax18
+            平台：qualcommax / ipq60xx
+            WiFi：${{ github.event.inputs.device == 'jdcloud_re-ss-01' && '保留（ath11k，AX1800 WiFi6）' || '取消（纯有线）' }}
             由 GitHub Actions 云编译自动发布
           files: artifact/*
           fail_on_unmatched_files: false

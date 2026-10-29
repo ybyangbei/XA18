@@ -14,7 +14,7 @@
 # ---- 示例 3：设置默认主题为 argon（取消注释启用）----
 # sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/*/Makefile
 
-# ---- 示例 4：给 cmiot_ax18 设备定义追加板卡数据包（仅供进阶调试，见 README §4）----
+# ---- 示例 4：给 cmiot_ax18 设备定义追加板卡数据包（仅供进阶调试，见 README §5）----
 # 需先自行准备 board-cmiot_ax18.ipq6018 校准文件并放入 ipq-wifi 包；
 # 以下演示如何给设备定义追加 DEVICE_PACKAGES（用 awk 在 DEVICE_DTS_CONFIG 行后插入）：
 # awk '/define Device\/cmiot_ax18/{f=1} f && /DEVICE_DTS_CONFIG/{print; print "\tDEVICE_PACKAGES := ipq-wifi-cmiot_ax18"; next} {print}' \
