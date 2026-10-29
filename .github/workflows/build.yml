@@ -9,7 +9,7 @@ env:
   # 源码: coolsnnowwolf/lede master（LEDE, qualcommax/ipq60xx, 内核 6.12, NSS 为 target 默认包）
   # 机型: cmiot_ax18 原生支持；feeds 自带 openclash / smartdns / vlmcsd / zerotier（逐一核实）
   REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
+  REPO_BRANCH: tree/20251001
 
 jobs:
   build:
