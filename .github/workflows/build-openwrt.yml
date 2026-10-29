@@ -76,8 +76,13 @@ jobs:
       - name: 下载软件包
         run: |
           cd openwrt
-          for i in 1 2 3; do
-            make download -j8 && break
+          i=0
+          until make download -j8; do
+            i=$((i+1))
+            if [ "$i" -ge 3 ]; then
+              echo "软件包下载 3 次均失败，中止构建"
+              exit 1
+            fi
             echo "软件包下载失败，第 $i 次重试..."
             sleep 5
           done
@@ -86,7 +91,7 @@ jobs:
         run: |
           cd openwrt
           echo "开始编译（CPU $(nproc) 核，预计 1.5~3 小时）"
-          make -j$(nproc) V=s
+          make -j$(nproc) V=s || { echo "并行编译失败，降级单线程重试"; make -j1 V=s; }
 
       - name: 收集产物
         run: |

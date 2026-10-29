@@ -70,7 +70,7 @@ OpenWrt 内 **系统 → 备份/升级 → 刷写新的固件**，选择 `...-sy
 
 | 方案 | REPO_URL 设置 | WiFi | 说明 |
 | --- | --- | --- | --- |
-| **A（本工程默认）** | `https://github.com/coolsnowwolf/lede` | ❌ 不可用 | 原版 lede，设备树禁用 WiFi；可作有线路由/旁路由 |
+| **A（本工程默认）** | `https://github.com/coolsnowwolf/lede` | ❌ 不可用 | 原版 lede，设备树禁用 WiFi；可作有线路由/旁路由。`.config` 已显式禁用全部无线包（`kmod-ath11k*`/`ath11k-firmware-ipq6018`/`wpad-openssl`），防止目标默认包自动带入 |
 | **B（推荐，要 WiFi）** | `https://github.com/AnClark/lede-zn-m2-wifi` | ✅ 可用 | lede 的 WiFi 增强 fork，专为 ZN-M2 / CMIOT AX18 维护（原 `lede-zn-m2` 已改名） |
 | C（进阶） | `https://github.com/coolsnowwolf/lede` | 需自备板卡数据 | 自行准备 `board-cmiot_ax18.ipq6018` 校准文件并给 `ipq60xx.mk` 追加 `DEVICE_PACKAGES := ipq-wifi-cmiot_ax18`，见 `diy-part2.sh` 示例 4 |
 

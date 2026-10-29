@@ -20,4 +20,26 @@
 # awk '/define Device\/cmiot_ax18/{f=1} f && /DEVICE_DTS_CONFIG/{print; print "\tDEVICE_PACKAGES := ipq-wifi-cmiot_ax18"; next} {print}' \
 #   target/linux/qualcommax/image/ipq60xx.mk > /tmp/ipq60xx.mk && mv /tmp/ipq60xx.mk target/linux/qualcommax/image/ipq60xx.mk
 
+# ---- LuCI 修复：保存并应用立即生效，避免 90s 回滚确认报错 ----
+# 现象：LEDE 25.12 的 LuCI 中"保存并应用"走 apply_rollback（90s 确认窗口），
+#       断流/超时时会触发回滚并报错。修复：前端所有 apply 恒走 apply_unchecked，
+#       UCI 立即 commit+apply，无回滚确认窗口。
+# 新版 ui.js 为三目运算写法，旧版为对象简写，两种模式都处理；未命中仅告警不中断。
+UIJS=$(find feeds/luci/modules/luci-base -name ui.js -path '*luci-static/resources*' | head -1)
+echo "UIJS=$UIJS"
+if [ -n "$UIJS" ]; then
+  if grep -q "checked ? 'apply_rollback' : 'apply_unchecked'" "$UIJS"; then
+    sed -i "s/checked ? 'apply_rollback' : 'apply_unchecked'/'apply_unchecked'/g" "$UIJS"
+    echo "PATCH apply-unchecked APPLIED (new-style ternary)"
+  elif grep -q "apply_rollback':'apply_unchecked" "$UIJS"; then
+    sed -i "s/apply_rollback':'apply_unchecked/apply_unchecked':'apply_unchecked/" "$UIJS"
+    echo "PATCH apply-unchecked APPLIED (legacy object)"
+  else
+    echo "WARN: ui.js apply_rollback/apply_unchecked pattern not found"
+  fi
+  grep -n "apply_unchecked" "$UIJS" | head -5
+else
+  echo "WARN: ui.js not found, skip apply-unchecked patch"
+fi
+
 echo "diy-part2.sh 执行完成（本次未启用额外操作，按需编辑本文件）"
